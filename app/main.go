@@ -35,13 +35,13 @@ func main() {
 }
 
 func GetMacAddresses() []string {
-	cmd := exec.Command("ifconfig")
+	cmd := exec.Command("getmac")
 	out, err := cmd.Output()
 	if err != nil {
 		log.Fatal(err)
 	}
 	data, err := conv(string(out))
-	r := regexp.MustCompile(`(..:){5}..`) // [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}
+	r := regexp.MustCompile(`(..-){5}..`) // [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}
 	results := r.FindAllString(data, -1)
 	return results
 }
