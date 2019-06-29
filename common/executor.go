@@ -1,9 +1,15 @@
 package common
 
-func ExecuteWinCmd(cmd string) {
+import (
+
+	"os/exec"
+)
+
+func ExecuteWinCmd(cmd string) ([]byte,error){
 	out, err := exec.Command("cmd.exe", "/k", "chcp 65001 && "+cmd).Output()
     if err != nil {
-        return nil, err
+        return out,err
 	}
-	return out
+
+	return out,err
 }
