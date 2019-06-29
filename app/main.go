@@ -10,10 +10,13 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gocarina/gocsv"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
+
+	"github.com/awa2/gcat/common"
 )
 
 type JSON map[string]interface{}
@@ -25,13 +28,15 @@ func main() {
 		"MacAddresses": GetMacAddresses(),
 		"Share":        GetWmicShare(),
 		"Useraccount":  GetWmicUseraccount(),
-		"QFfe":         GetWmicQfe(),
+		"Qfe":          GetWmicQfe(),
+		"ExecDayTime":  GetExecdaytime(),
 	}
 
 	bytes, err := json.MarshalIndent(GcatData, "", "  ")
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	fmt.Println(string(bytes))
 	fpw, err := os.Create("gcat.json")
 	if err != nil {
@@ -54,10 +59,16 @@ type Share struct {
 	Type   int    `csv:"Type"`
 }
 
+type Qfe struct {
+	CSName      string    `csv:"CSName"`
+	Caption     string    `csv:"Caption,string"`
+	InstalledOn time.Time `csv:"InstalledOn"`
+}
+
 func GetWmicShare() []*JSON {
 	Shares := []*Share{}
 	// ここでCSV形式の文字列を受け取るコマンドを実行する。
-	cmd := exec.Command("wmic", "share", "list", "/format:csv") // cmd := exec.Command("wmic", "timezone", "list", "brief", "/format:csv")
+	cmd := exec.Command("wmic", "share", "list", "/format:csv")
 	out, err := cmd.Output()
 	if err != nil {
 		log.Fatal(err)
@@ -96,7 +107,7 @@ func GetWmicShare() []*JSON {
 func GetWmicUseraccount() []*JSON {
 	Shares := []*Share{}
 	// ここでCSV形式の文字列を受け取るコマンドを実行する。
-	cmd := exec.Command("wmic", "useraccount", "list", "/format:csv") // cmd := exec.Command("wmic", "timezone", "list", "brief", "/format:csv")
+	cmd := exec.Command("wmic", "useraccount", "list", "/format:csv")
 	out, err := cmd.Output()
 	if err != nil {
 		log.Fatal(err)
@@ -135,18 +146,18 @@ func GetWmicUseraccount() []*JSON {
 func GetWmicQfe() []*JSON {
 	Shares := []*Share{}
 	// ここでCSV形式の文字列を受け取るコマンドを実行する。
-	cmd := exec.Command("wmic", "qfe", "list", "/format:csv") // cmd := exec.Command("wmic", "timezone", "list", "brief", "/format:csv")
+	cmd := exec.Command("wmic", "qfe", "list", "/format:csv")
 	out, err := cmd.Output()
 	if err != nil {
 		log.Fatal(err)
 	}
 	data, err := conv(string(out))
-
-	data = Header_Del(data)
-	// rep := regexp.MustCompile(`\nN`) //先頭行（空っぽ）を削除（置換）する
-	// data = rep.ReplaceAllString(data, "N")
-	// rep = regexp.MustCompile(`\r`) //\rを削除する
-	// data = rep.ReplaceAllString(data, "")
+	layout := "1/2/2006" //日付変換用の判定値
+	// data = Header_Del(data)
+	rep := regexp.MustCompile(`\nN`) //先頭行（空っぽ）を削除（置換）する
+	data = rep.ReplaceAllString(data, "N")
+	rep = regexp.MustCompile(`\r`) //\rを削除する
+	data = rep.ReplaceAllString(data, "")
 
 	r := csv.NewReader(strings.NewReader(data))
 	records, err := r.ReadAll()
@@ -161,7 +172,12 @@ func GetWmicQfe() []*JSON {
 		} else {
 			json := JSON{}
 			for index, header := range headers {
-				json[header] = record[index]
+				switch header {
+				case "InstalledOn":
+					json[header], _ = time.Parse(layout, record[index])
+				default:
+					json[header] = record[index]
+				}
 			}
 			jsons = append(jsons, &json)
 		}
@@ -184,9 +200,7 @@ func GetUsers() JSON {
 		log.Fatal(err)
 	}
 	data, err := conv(string(out))
-	// 	var in = `client_id,client_name,client_age
-	// user01,"J, Smith", 21`
-
+	layout := "2006/01/02, 15:04:05" //日付変換用の判定値
 	r := csv.NewReader(strings.NewReader(data))
 	records, err := r.ReadAll()
 	if err != nil {
@@ -199,7 +213,14 @@ func GetUsers() JSON {
 			headers = record
 		} else {
 			for index, header := range headers {
-				json[header] = record[index]
+				switch header {
+				case "システム起動時間":
+					json[header], _ = time.Parse(layout, record[index])
+				case "最初のインストール日付":
+					json[header], _ = time.Parse(layout, record[index])
+				default:
+					json[header] = record[index]
+				}
 			}
 		}
 	}
@@ -218,6 +239,23 @@ func GetMacAddresses() []string {
 	return results
 }
 
+//実験用_GetExecdaytime()
+func GetExecdaytime() time.Time {
+	cmd := exec.Command("cmd.exe", "/c", "date", "/t")
+	out, err := cmd.Output()
+	if err != nil {
+		log.Fatal(err)
+	}
+	data, err := conv(string(out))
+	rep := regexp.MustCompile(`\s\r\n`)
+	data = rep.ReplaceAllString(data, "")
+	layout := "2006/01/02"
+	t, _ := time.Parse(layout, data)
+	fmt.Println(t)
+
+	return t //results
+}
+
 func conv(str string) (string, error) {
 	strReader := strings.NewReader(str)
 	decodedReader := transform.NewReader(strReader, japanese.ShiftJIS.NewDecoder())
@@ -226,13 +264,4 @@ func conv(str string) (string, error) {
 		return "", err
 	}
 	return string(decoded), err
-}
-
-func Header_Del(str string) {
-	rep := regexp.MustCompile(`\nN`) //先頭行（空っぽ）を削除（置換）する
-	data := rep.ReplaceAllString(str, "N")
-	rep = regexp.MustCompile(`\r`) //\rを削除する
-	data = rep.ReplaceAllString(data, "")
-
-	return data, ""
 }
